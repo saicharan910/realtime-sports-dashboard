@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  mysql-db:
+    image: mysql:8.0
+    container_name: sports_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: sportsdb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - sports-network
+
+  backend:
+    build:
+      context: ./sports
+    ports:
+      - "8000:8000" # Updated to match your Spring Boot server.port=8000
+    depends_on:
+      - mysql-db
+    restart: unless-stopped
+    networks:
+      - sports-network
+      
+  frontend:
+    build:
+      context: ./sports-dashboard-ui
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - sports-network
+
+networks:
+  sports-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
