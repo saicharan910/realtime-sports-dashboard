@@ -2,7 +2,7 @@ package com.example.sports.service;
 
 import com.example.sports.dto.MatchResponseDTO;
 import com.example.sports.entity.MatchEntity;
-import com.example.sports.entity.MatchStatus;
+import com.example.sports.model.MatchStatus;
 import com.example.sports.repository.MatchRepository;
 import org.springframework.stereotype.Service;
 

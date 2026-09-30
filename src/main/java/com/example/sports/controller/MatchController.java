@@ -1,7 +1,7 @@
 package com.example.sports.controller;
 
 import com.example.sports.dto.MatchResponseDTO;
-import com.example.sports.entity.MatchStatus;
+import com.example.sports.model.MatchStatus;
 import com.example.sports.service.MatchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

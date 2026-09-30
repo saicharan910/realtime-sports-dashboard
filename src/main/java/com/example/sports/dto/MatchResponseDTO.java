@@ -1,9 +1,9 @@
 package com.example.sports.dto;
 
-import com.example.sports.entity.MatchStatus;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import com.example.sports.model.MatchStatus;
 
 public record MatchResponseDTO(
         String id,

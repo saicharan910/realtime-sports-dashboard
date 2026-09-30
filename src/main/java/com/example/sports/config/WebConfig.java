@@ -11,7 +11,7 @@ public class WebConfig implements WebMvcConfigurer {
     private final String frontendOrigin;
 
     public WebConfig(
-            @Value("${app.frontend-url:http://localhost:5173}")
+            @Value("${app.frontend-url}")
             String frontendOrigin
     ) {
         this.frontendOrigin = frontendOrigin;

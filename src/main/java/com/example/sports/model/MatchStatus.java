@@ -1,7 +1,8 @@
-package com.example.sports.entity;
+
+package com.example.sports.model;
 
 public enum MatchStatus {
-    UPCOMING,
     LIVE,
+    UPCOMING,
     COMPLETED
 }

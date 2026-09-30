@@ -15,7 +15,7 @@ public class WebSocketConfig
     private final String frontendOrigin;
 
     public WebSocketConfig(
-            @Value("${app.frontend-url:http://localhost:5173}") String frontendOrigin) {
+            @Value("${app.frontend-url}") String frontendOrigin) {
         this.frontendOrigin = frontendOrigin;
     }
 

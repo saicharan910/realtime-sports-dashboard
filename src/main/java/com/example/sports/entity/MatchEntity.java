@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+import com.example.sports.model.MatchStatus;
+
 @Entity
 @Table(name = "cricket_matches", indexes = {
         @Index(name = "idx_match_status", columnList = "status"),
