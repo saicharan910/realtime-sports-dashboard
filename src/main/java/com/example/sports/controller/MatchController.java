@@ -1,44 +1,54 @@
 package com.example.sports.controller;
 
 import com.example.sports.dto.MatchResponseDTO;
-import com.example.sports.entity.MatchEntity;
-import com.example.sports.repository.MatchRepository;
+import com.example.sports.service.MatchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/matches")
-@CrossOrigin(origins = "*")
 public class MatchController {
 
-    private final MatchRepository matchRepository;
+    private final MatchService matchService;
 
-    public MatchController(MatchRepository matchRepository) {
-        this.matchRepository = matchRepository;
+    public MatchController(MatchService matchService) {
+        this.matchService = matchService;
     }
 
     @GetMapping
     public ResponseEntity<List<MatchResponseDTO>> getAllMatches() {
-        List<MatchResponseDTO> dtos = matchRepository.findAll().stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(dtos);
+        return ResponseEntity.ok(matchService.getAllMatches());
     }
 
-    private MatchResponseDTO convertToDTO(MatchEntity entity) {
-        MatchResponseDTO dto = new MatchResponseDTO();
-        dto.setId(entity.getId());
-        dto.setTeamA(entity.getTeamA());
-        dto.setTeamB(entity.getTeamB());
-        dto.setStatus(entity.getStatus());
-        dto.setScore(entity.getScore());
-        dto.setSeries(entity.getSeries());
-        dto.setMatchDate(entity.getMatchDate());
-        dto.setCommentary(entity.getCommentary());
-        dto.setLastUpdated(entity.getLastUpdated());
-        return dto;
+    @GetMapping("/live")
+    public ResponseEntity<List<MatchResponseDTO>> getLiveMatches() {
+        return ResponseEntity.ok(
+                matchService.getMatchesByStatus("LIVE"));
+    }
+
+    @GetMapping("/upcoming")
+    public ResponseEntity<List<MatchResponseDTO>> getUpcomingMatches() {
+        return ResponseEntity.ok(
+                matchService.getMatchesByStatus("UPCOMING"));
+    }
+
+    @GetMapping("/completed")
+    public ResponseEntity<List<MatchResponseDTO>> getCompletedMatches() {
+        return ResponseEntity.ok(
+                matchService.getMatchesByStatus("COMPLETED"));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<MatchResponseDTO> getMatchById(
+            @PathVariable String id) {
+        MatchResponseDTO match = matchService.getMatchById(id);
+
+        if (match == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        return ResponseEntity.ok(match);
     }
 }

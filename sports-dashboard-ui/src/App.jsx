@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
+import { fetchMatches } from './api/matchesApi';
 
 export default function App() {
   const [matches, setMatches] = useState([]);
@@ -10,8 +11,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/matches')
-      .then(res => res.json())
+    fetchMatches()
       .then(data => {
         setMatches(data);
         setLoading(false);
@@ -21,26 +21,49 @@ export default function App() {
         setLoading(false);
       });
 
-    const socket = new SockJS('http://localhost:8000/ws-sports');
+
     const stompClient = new Client({
-      webSocketFactory: () => socket,
+      webSocketFactory: () => new SockJS('http://localhost:8000/ws-sports'),
+      reconnectDelay: 5000,
+
       onConnect: () => {
+        console.log("STOMP connected");
+
         setWsStatus('Connected');
+
         stompClient.subscribe('/topic/scores', (message) => {
+          console.log("STOMP message received");
+
           const updatedMatch = JSON.parse(message.body);
+
+          console.log("WS score update:", updatedMatch);
+
           setMatches(prev => {
             const index = prev.findIndex(m => m.id === updatedMatch.id);
+
             if (index !== -1) {
               const copy = [...prev];
               copy[index] = updatedMatch;
               return copy;
             }
+
             return [updatedMatch, ...prev];
           });
         });
       },
-      onStompError: () => setWsStatus('Error'),
-      onWebSocketClose: () => setWsStatus('Disconnected')
+      onStompError: (frame) => {
+        console.error("STOMP error:", frame);
+        setWsStatus('Error');
+      },
+
+      onWebSocketError: (error) => {
+        console.error("WebSocket error:", error);
+        setWsStatus('Error');
+      },
+
+      onWebSocketClose: () => {
+        setWsStatus('Disconnected');
+      }
     });
 
     stompClient.activate();

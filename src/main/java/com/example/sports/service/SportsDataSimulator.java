@@ -2,18 +2,19 @@ package com.example.sports.service;
 
 import com.example.sports.entity.MatchEntity;
 import com.example.sports.repository.MatchRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 
 @Service
 public class SportsDataSimulator {
@@ -22,119 +23,274 @@ public class SportsDataSimulator {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final MatchRepository matchRepository;
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    
-    @Value("${cric.api.key}")
-    private String apiKey;
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
 
-    @Value("${cric.api.base-url}")
-    private String baseUrl;
+    private final String apiKey;
+    private final String baseUrl;
 
-    public SportsDataSimulator(SimpMessagingTemplate messagingTemplate, MatchRepository matchRepository) {
+    public SportsDataSimulator(
+            SimpMessagingTemplate messagingTemplate,
+            MatchRepository matchRepository,
+            RestTemplate restTemplate,
+            ObjectMapper objectMapper,
+            @Value("${cric.api.key}") String apiKey,
+            @Value("${cric.api.base-url}") String baseUrl) {
+
         this.messagingTemplate = messagingTemplate;
         this.matchRepository = matchRepository;
-        seedFallbackIfEmpty();
-        fetchAndSaveMatches();
+        this.restTemplate = restTemplate;
+        this.objectMapper = objectMapper;
+        this.apiKey = apiKey;
+        this.baseUrl = baseUrl;
     }
 
-    private void seedFallbackIfEmpty() {
-        if (matchRepository.count() == 0) {
-            MatchEntity m1 = new MatchEntity();
-            m1.setId("live-prod-01");
-            m1.setSeries("ICC Champions Trophy");
-            m1.setMatchDate("2026-09-29");
-            m1.setTeamA("India");
-            m1.setTeamB("Australia");
-            m1.setStatus("LIVE");
-            m1.setScore("India: 245/3 (38.2 ov) | Australia: 310/10 (49.1 ov)");
-            m1.setWinProbability("India Win Prob: 68% | Australia Win Prob: 32%");
-            m1.setCommentary("14:22:10 - Shreyas Iyer hit the ball high going out of stadium and its a SIXXXXXX!\n14:21:45 - Single taken smoothly down to long-on.");
-            matchRepository.save(m1);
-        }
-    }
-
-    @Scheduled(fixedRate = 5000) 
+    /**
+     * Poll the external cricket provider.
+     *
+     * fixedDelay means the next poll starts only after the previous
+     * poll has completed. This avoids overlapping API requests.
+     */
+    @Scheduled(fixedDelayString = "${cric.api.poll-interval-ms:60000}", initialDelayString = "${cric.api.initial-delay-ms:10000}")
     public void fetchAndSaveMatches() {
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("CRIC_API_KEY is not configured. Skipping cricket data ingestion.");
+            return;
+        }
+
         try {
-            String url = baseUrl + "/currentMatches?apikey=" + apiKey + "&offset=0";
+            String url = UriComponentsBuilder
+                    .fromUriString(baseUrl)
+                    .path("/currentMatches")
+                    .queryParam("apikey", apiKey)
+                    .queryParam("offset", 0)
+                    .build()
+                    .toUriString();
+
             String response = restTemplate.getForObject(url, String.class);
-            JsonNode root = objectMapper.readTree(response);
-            JsonNode dataArray = root.path("data");
-            
-            if (dataArray.isArray() && dataArray.size() > 0) {
-                for (JsonNode match : dataArray) {
-                    String matchId = match.path("id").asText();
-                    MatchEntity entity = matchRepository.findById(matchId).orElse(new MatchEntity());
-                    
-                    entity.setId(matchId);
-                    entity.setSeries(match.path("series").asText("International Cricket Series"));
-                    entity.setMatchDate(match.path("date").asText("2026-09-29"));
-                    
-                    JsonNode teams = match.path("teams");
-                    if (teams.isArray() && teams.size() >= 2) {
-                        entity.setTeamA(teams.get(0).asText());
-                        entity.setTeamB(teams.get(1).asText());
-                    } else {
-                        entity.setTeamA("Team A");
-                        entity.setTeamB("Team B");
-                    }
-                    
-                    boolean matchStarted = match.path("matchStarted").asBoolean(false);
-                    boolean matchEnded = match.path("matchEnded").asBoolean(false);
-                    
-                    if (matchEnded) {
-                        entity.setStatus("COMPLETED");
-                    } else if (matchStarted) {
-                        entity.setStatus("LIVE");
-                    } else {
-                        entity.setStatus("UPCOMING");
-                    }
 
-                    if (match.path("score").isArray() && match.path("score").size() > 0) {
-                        StringBuilder sb = new StringBuilder();
-                        for (JsonNode inning : match.path("score")) {
-                            sb.append(inning.path("inning").asText()).append(": ")
-                              .append(inning.path("r").asText()).append("/")
-                              .append(inning.path("w").asText())
-                              .append(" (").append(inning.path("o").asText()).append(" ov) | ");
-                        }
-                        entity.setScore(sb.toString());
-                        entity.setWinProbability(entity.getTeamA() + " Win Prob: 55% | " + entity.getTeamB() + " Win Prob: 45% (Live Model)");
-                    } else if (match.has("status")) {
-                        entity.setScore(match.path("status").asText());
-                        entity.setWinProbability("Pre-match / Standby");
-                    } else {
-                        entity.setScore("Scheduled / Yet to bat");
-                        entity.setWinProbability("Awaiting toss");
-                    }
-
-                    fetchMatchDetails(matchId, entity);
-                    matchRepository.save(entity);
-                    messagingTemplate.convertAndSend("/topic/scores", entity);
-                }
+            if (response == null || response.isBlank()) {
+                log.warn("CricAPI returned an empty response.");
+                return;
             }
+
+            JsonNode root = objectMapper.readTree(response);
+
+            if (!isSuccessfulProviderResponse(root)) {
+                log.warn(
+                        "CricAPI rejected the current matches request: {}",
+                        root.path("reason").asText("unknown provider error"));
+                return;
+            }
+
+            JsonNode dataArray = root.path("data");
+
+            if (!dataArray.isArray()) {
+                log.warn("CricAPI response did not contain a valid data array.");
+                return;
+            }
+
+            for (JsonNode match : dataArray) {
+                processMatch(match);
+            }
+
+        } catch (RestClientException e) {
+            log.warn("Unable to reach CricAPI: {}", e.getMessage());
         } catch (Exception e) {
-            log.error("CricAPI Ingestion Exception (Using fallback persistence): {}", e.getMessage());
+            log.error("Unexpected error while ingesting cricket data.", e);
         }
     }
 
-    private void fetchMatchDetails(String matchId, MatchEntity entity) {
-        try {
-            String detailUrl = baseUrl + "/match_info?apikey=" + apiKey + "&id=" + matchId;
-            String detailResponse = restTemplate.getForObject(detailUrl, String.class);
-            JsonNode matchData = objectMapper.readTree(detailResponse).path("data");
+    private void processMatch(JsonNode match) {
+        String matchId = match.path("id").asText(null);
 
-            if (!matchData.isMissingNode() && matchData.has("note")) {
-                String timestamp = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
-                String note = matchData.path("note").asText();
-                String existing = entity.getCommentary() != null ? entity.getCommentary() : "";
-                if (!existing.contains(note)) {
-                    entity.setCommentary(timestamp + " - " + note + "\n" + existing);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Detail fetch failed for match ID {}: {}", matchId, e.getMessage());
+        if (matchId == null || matchId.isBlank()) {
+            log.warn("Skipping provider record without a match ID.");
+            return;
         }
+
+        MatchEntity existing = matchRepository
+                .findById(matchId)
+                .orElse(null);
+
+        MatchEntity entity = existing != null
+                ? existing
+                : new MatchEntity();
+
+        boolean changed = existing == null;
+
+        entity.setId(matchId);
+
+        changed |= updateIfChanged(
+                entity.getSeries(),
+                match.path("series").asText("International Cricket Series"),
+                entity::setSeries);
+
+        changed |= updateIfChanged(
+                entity.getMatchDate(),
+                match.path("date").asText(null),
+                entity::setMatchDate);
+
+        String teamA = "Team A";
+        String teamB = "Team B";
+
+        JsonNode teams = match.path("teams");
+
+        if (teams.isArray()) {
+            if (teams.size() > 0) {
+                teamA = teams.get(0).asText("Team A");
+            }
+
+            if (teams.size() > 1) {
+                teamB = teams.get(1).asText("Team B");
+            }
+        }
+
+        changed |= updateIfChanged(
+                entity.getTeamA(),
+                teamA,
+                entity::setTeamA);
+
+        changed |= updateIfChanged(
+                entity.getTeamB(),
+                teamB,
+                entity::setTeamB);
+
+        String status = determineStatus(match);
+
+        changed |= updateIfChanged(
+                entity.getStatus(),
+                status,
+                entity::setStatus);
+
+        String score = extractScore(match);
+
+        changed |= updateIfChanged(
+                entity.getScore(),
+                score,
+                entity::setScore);
+
+        /*
+         * Do not manufacture win-probability numbers.
+         *
+         * The provider response currently does not give us a trustworthy
+         * probability value, so the field remains null until a real
+         * probability source is integrated.
+         */
+        if (entity.getWinProbability() != null) {
+            entity.setWinProbability(null);
+            changed = true;
+        }
+
+        /*
+         * if (changed) {
+         * matchRepository.save(entity);
+         * 
+         * messagingTemplate.convertAndSend(
+         * "/topic/scores",
+         * entity);
+         * 
+         * log.info(
+         * "Updated match {}: {} vs {} ({})",
+         * entity.getId(),
+         * entity.getTeamA(),
+         * entity.getTeamB(),
+         * entity.getStatus());
+         * }
+         */
+        if (changed) {
+            matchRepository.save(entity);
+
+            messagingTemplate.convertAndSend(
+                    "/topic/scores",
+                    entity);
+
+            log.info(
+                    "Updated match {}: {} vs {} ({})",
+                    entity.getId(),
+                    entity.getTeamA(),
+                    entity.getTeamB(),
+                    entity.getStatus());
+        }
+    }
+
+    private String determineStatus(JsonNode match) {
+        boolean matchStarted = match.path("matchStarted").asBoolean(false);
+
+        boolean matchEnded = match.path("matchEnded").asBoolean(false);
+
+        if (matchEnded) {
+            return "COMPLETED";
+        }
+
+        if (matchStarted) {
+            return "LIVE";
+        }
+
+        return "UPCOMING";
+    }
+
+    private String extractScore(JsonNode match) {
+        JsonNode scores = match.path("score");
+
+        if (scores.isArray() && !scores.isEmpty()) {
+            StringBuilder score = new StringBuilder();
+
+            for (JsonNode inning : scores) {
+                if (!score.isEmpty()) {
+                    score.append(" | ");
+                }
+
+                String inningName = inning.path("inning").asText("Innings");
+
+                String runs = inning.path("r").asText("-");
+
+                String wickets = inning.path("w").asText("-");
+
+                String overs = inning.path("o").asText("-");
+
+                score.append(inningName)
+                        .append(": ")
+                        .append(runs)
+                        .append("/")
+                        .append(wickets)
+                        .append(" (")
+                        .append(overs)
+                        .append(" ov)");
+            }
+
+            return score.toString();
+        }
+
+        String providerStatus = match.path("status").asText(null);
+
+        if (providerStatus != null && !providerStatus.isBlank()) {
+            return providerStatus;
+        }
+
+        return "Scheduled";
+    }
+
+    private boolean isSuccessfulProviderResponse(JsonNode root) {
+        String status = root.path("status").asText("");
+
+        /*
+         * CricAPI normally reports "success".
+         * Treat an explicitly reported non-success response as failure.
+         */
+        return status.isBlank()
+                || "success".equalsIgnoreCase(status);
+    }
+
+    private boolean updateIfChanged(
+            String oldValue,
+            String newValue,
+            java.util.function.Consumer<String> setter) {
+        if (!Objects.equals(oldValue, newValue)) {
+            setter.accept(newValue);
+            return true;
+        }
+
+        return false;
     }
 }
