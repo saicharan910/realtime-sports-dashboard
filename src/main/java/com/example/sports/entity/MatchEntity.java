@@ -9,9 +9,9 @@ import com.example.sports.model.MatchStatus;
 
 @Entity
 @Table(name = "cricket_matches", indexes = {
-        @Index(name = "idx_match_status", columnList = "status"),
-        @Index(name = "idx_match_date", columnList = "match_date"),
-        @Index(name = "idx_match_series", columnList = "series")
+        @Index(name = "idx_cricket_matches_status", columnList = "status"),
+        @Index(name = "idx_cricket_matches_match_date", columnList = "match_date"),
+        @Index(name = "idx_cricket_matches_series", columnList = "series")
 })
 public class MatchEntity {
 
@@ -19,10 +19,10 @@ public class MatchEntity {
     @Column(length = 100, nullable = false, updatable = false)
     private String id;
 
-    @Column(nullable = false, length = 150)
+    @Column(name = "team_a", nullable = false, length = 150)
     private String teamA;
 
-    @Column(nullable = false, length = 150)
+    @Column(name = "team_b", nullable = false, length = 150)
     private String teamB;
 
     @Enumerated(EnumType.STRING)
@@ -38,7 +38,7 @@ public class MatchEntity {
     @Column(name = "match_date")
     private LocalDate matchDate;
 
-    @Column(nullable = false)
+    @Column(name = "last_updated", nullable = false)
     private LocalDateTime lastUpdated;
 
     @PrePersist

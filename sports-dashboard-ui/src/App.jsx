@@ -4,14 +4,8 @@ import { Client } from '@stomp/stompjs';
 import { fetchMatches } from './api/matchesApi';
 import './App.css';
 
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL;
-const WS_TOPIC = import.meta.env.VITE_WS_TOPIC;
-
-if (!WS_BASE_URL || !WS_TOPIC) {
-  throw new Error(
-    'VITE_WS_BASE_URL and VITE_WS_TOPIC are required'
-  );
-}
+const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || window.location.origin;
+const WS_TOPIC = import.meta.env.VITE_WS_TOPIC || '/topic/scores';
 
 const STATUS_FILTERS = ['ALL', 'LIVE', 'UPCOMING', 'COMPLETED'];
 
