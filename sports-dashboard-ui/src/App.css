@@ -332,8 +332,8 @@
 }
 
 .match-card-featured {
+    border: 1px solid #cbd9cf;
     border-top: 2px solid #c83b42;
-    border-color: #cbd9cf;
     box-shadow: 0 2px 8px rgba(24, 58, 39, 0.05);
 }
 
