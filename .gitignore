@@ -35,3 +35,7 @@ build/
 # Environment / secrets
 .env
 *.env
+
+src/main/resources/application-local.properties
+
+hs_err_pid*.log

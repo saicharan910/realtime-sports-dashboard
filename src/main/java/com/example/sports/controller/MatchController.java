@@ -1,6 +1,7 @@
 package com.example.sports.controller;
 
 import com.example.sports.dto.MatchResponseDTO;
+import com.example.sports.model.MatchStatus;
 import com.example.sports.service.MatchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -25,19 +26,19 @@ public class MatchController {
     @GetMapping("/live")
     public ResponseEntity<List<MatchResponseDTO>> getLiveMatches() {
         return ResponseEntity.ok(
-                matchService.getMatchesByStatus("LIVE"));
+                matchService.getMatchesByStatus(MatchStatus.LIVE));
     }
 
     @GetMapping("/upcoming")
     public ResponseEntity<List<MatchResponseDTO>> getUpcomingMatches() {
         return ResponseEntity.ok(
-                matchService.getMatchesByStatus("UPCOMING"));
+                matchService.getMatchesByStatus(MatchStatus.UPCOMING));
     }
 
     @GetMapping("/completed")
     public ResponseEntity<List<MatchResponseDTO>> getCompletedMatches() {
         return ResponseEntity.ok(
-                matchService.getMatchesByStatus("COMPLETED"));
+                matchService.getMatchesByStatus(MatchStatus.COMPLETED));
     }
 
     @GetMapping("/{id}")

@@ -1,220 +1,705 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import { fetchMatches } from './api/matchesApi';
+import './App.css';
 
-export default function App() {
-  const [matches, setMatches] = useState([]);
-  const [selectedMatch, setSelectedMatch] = useState(null);
-  const [filter, setFilter] = useState('ALL');
-  const [wsStatus, setWsStatus] = useState('Connecting...');
-  const [loading, setLoading] = useState(true);
+const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || window.location.origin;
+const WS_TOPIC = import.meta.env.VITE_WS_TOPIC || '/topic/scores';
 
-  useEffect(() => {
-    fetchMatches()
-      .then(data => {
-        setMatches(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("API error:", err);
-        setLoading(false);
-      });
+const STATUS_FILTERS = ['ALL', 'LIVE', 'UPCOMING', 'COMPLETED'];
 
+function formatTime(value) {
+  if (!value) return '—';
 
-    const stompClient = new Client({
-      webSocketFactory: () => new SockJS('http://localhost:8000/ws-sports'),
-      reconnectDelay: 5000,
+  const date = new Date(value);
 
-      onConnect: () => {
-        console.log("STOMP connected");
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
 
-        setWsStatus('Connected');
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
 
-        stompClient.subscribe('/topic/scores', (message) => {
-          console.log("STOMP message received");
+function formatDate(value) {
+  if (!value) return 'Date unavailable';
 
-          const updatedMatch = JSON.parse(message.body);
+  const date = new Date(`${value}T00:00:00`);
 
-          console.log("WS score update:", updatedMatch);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
 
-          setMatches(prev => {
-            const index = prev.findIndex(m => m.id === updatedMatch.id);
+  return new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
 
-            if (index !== -1) {
-              const copy = [...prev];
-              copy[index] = updatedMatch;
-              return copy;
-            }
+function getTeamInitials(team = '') {
+  const words = team
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
 
-            return [updatedMatch, ...prev];
-          });
-        });
-      },
-      onStompError: (frame) => {
-        console.error("STOMP error:", frame);
-        setWsStatus('Error');
-      },
+  if (words.length === 0) return '?';
 
-      onWebSocketError: (error) => {
-        console.error("WebSocket error:", error);
-        setWsStatus('Error');
-      },
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
 
-      onWebSocketClose: () => {
-        setWsStatus('Disconnected');
-      }
-    });
+  return words
+    .slice(0, 2)
+    .map(word => word[0])
+    .join('')
+    .toUpperCase();
+}
 
-    stompClient.activate();
-    return () => stompClient.deactivate();
-  }, []);
+function getStatusLabel(status) {
+  switch (status) {
+    case 'LIVE':
+      return 'LIVE';
+    case 'COMPLETED':
+      return 'FINAL';
+    case 'UPCOMING':
+      return 'UPCOMING';
+    default:
+      return status || 'UNKNOWN';
+  }
+}
 
-  const filteredMatches = matches.filter(m => {
-    if (filter === 'ALL') return true;
-    return m.status && m.status.toUpperCase() === filter;
+function sortMatches(matches) {
+  const priority = {
+    LIVE: 0,
+    UPCOMING: 1,
+    COMPLETED: 2,
+  };
+
+  return [...matches].sort((a, b) => {
+    const statusDifference =
+      (priority[a.status] ?? 9) - (priority[b.status] ?? 9);
+
+    if (statusDifference !== 0) {
+      return statusDifference;
+    }
+
+    const dateA = a.matchDate || '';
+    const dateB = b.matchDate || '';
+
+    return dateA.localeCompare(dateB);
   });
+}
+
+function StatusBadge({ status }) {
+  return (
+    <span className={`status-badge status-${status?.toLowerCase()}`}>
+      {status === 'LIVE' && <span className="live-dot" />}
+      {getStatusLabel(status)}
+    </span>
+  );
+}
+
+function TeamMark({ name }) {
+  return (
+    <span className="team-mark" aria-hidden="true">
+      {getTeamInitials(name)}
+    </span>
+  );
+}
+
+function MatchScore({ match }) {
+  const hasScore = Boolean(match.score);
 
   return (
-    <div style={{ background: '#ffffff', color: '#111827', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: '14px' }}>
-
-      {/* Clean White Professional Header */}
-      <header style={{ borderBottom: '1px solid #e5e7eb', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#ffffff' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#111827' }}>Cricket Match Center // Enterprise Edition</h1>
-          <span style={{ fontSize: '12px', color: '#6b7280' }}>Real-time live scores, past results, upcoming schedules & win probability analytics</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#4b5563' }}>
-          <span style={{
-            width: '8px', height: '8px', borderRadius: '50%',
-            background: wsStatus === 'Connected' ? '#10b981' : '#ef4444',
-            display: 'inline-block'
-          }}></span>
-          <span style={{ fontWeight: '500' }}>{wsStatus}</span>
-        </div>
-      </header>
-
-      {/* Main Container */}
-      <main style={{ maxWidth: '1050px', margin: '32px auto', padding: '0 16px' }}>
-
-        {/* Filter Bar */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: '600', margin: 0, color: '#111827' }}>Fixtures & Results Stream</h2>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            {['ALL', 'LIVE', 'UPCOMING', 'COMPLETED'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setFilter(tab)}
-                style={{
-                  background: filter === tab ? '#111827' : '#f3f4f6',
-                  color: filter === tab ? '#ffffff' : '#374151',
-                  border: 'none',
-                  padding: '6px 14px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  cursor: 'pointer'
-                }}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {loading ? (
-          <div style={{ padding: '32px', textAlign: 'center', color: '#6b7280', border: '1px solid #e5e7eb', borderRadius: '8px' }}>Loading match schedules...</div>
-        ) : filteredMatches.length === 0 ? (
-          <div style={{ padding: '32px', textAlign: 'center', color: '#6b7280', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-            No matches available for status: {filter}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {filteredMatches.map(m => (
-              <div
-                key={m.id}
-                onClick={() => setSelectedMatch(m)}
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px',
-                  padding: '20px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-                  transition: 'border-color 0.15s ease'
-                }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = '#9ca3af'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = '#e5e7eb'}
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                    <span style={{
-                      fontSize: '11px', fontWeight: '600', padding: '2px 8px', borderRadius: '4px',
-                      background: m.status === 'LIVE' ? '#fee2e2' : m.status === 'COMPLETED' ? '#d1fae5' : '#fef3c7',
-                      color: m.status === 'LIVE' ? '#dc2626' : m.status === 'COMPLETED' ? '#059669' : '#d97706'
-                    }}>
-                      {m.status === 'LIVE' ? 'LIVE' : m.status}
-                    </span>
-                    <span style={{ fontSize: '12px', color: '#6b7280' }}>{m.series}</span>
-                  </div>
-                  <div style={{ fontWeight: '600', fontSize: '16px', color: '#111827', marginBottom: '4px' }}>
-                    {m.teamA} vs {m.teamB}
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#4b5563' }}>
-                    {m.score}
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'right', fontSize: '12px', color: '#6b7280' }}>
-                  <div>Date: {m.matchDate || 'Scheduled'}</div>
-                  <div style={{ marginTop: '4px', color: '#2563eb', fontWeight: '500' }}>Live Commentary Log →</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
-
-      {/* Match Details & Timestamped Commentary Modal */}
-      {selectedMatch && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0, 0, 0, 0.4)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#ffffff', borderRadius: '12px', width: '700px', maxWidth: '90%', maxHeight: '85vh', overflowY: 'auto', padding: '28px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e5e7eb', paddingBottom: '16px', marginBottom: '20px' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#111827' }}>{selectedMatch.teamA} vs {selectedMatch.teamB}</h3>
-                <span style={{ fontSize: '12px', color: '#6b7280' }}>{selectedMatch.series} | Date: {selectedMatch.matchDate}</span>
-              </div>
-              <button onClick={() => setSelectedMatch(null)} style={{ background: '#f3f4f6', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '500', fontSize: '12px' }}>Close</button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>MATCH STATUS & SCORE</span>
-                <div style={{ background: '#f9fafb', padding: '12px', borderRadius: '6px', border: '1px solid #e5e7eb', fontWeight: '500' }}>
-                  {selectedMatch.score}
-                </div>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>WIN PROBABILITY TELEMETRY MODEL</span>
-                <div style={{ background: '#f0fdf4', color: '#166534', padding: '12px', borderRadius: '6px', border: '1px solid #bbf7d0', fontWeight: '500', fontSize: '13px' }}>
-                  {selectedMatch.winProbability || "Calculating probabilistic model..."}
-                </div>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>TIMESTAMPED COMMENTARY STREAM</span>
-                <div style={{ background: '#f9fafb', padding: '14px', borderRadius: '6px', border: '1px solid #e5e7eb', whiteSpace: 'pre-line', fontSize: '13px', lineHeight: '1.6', color: '#1f2937', fontFamily: 'monospace', maxHeight: '280px', overflowY: 'auto' }}>
-                  {selectedMatch.commentary || "No commentary logs captured yet."}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+    <div className="match-score">
+      {hasScore ? match.score : '—'}
     </div>
   );
 }
+
+function MatchCard({ match, onSelect, featured = false }) {
+  return (
+    <button
+      type="button"
+      className={`match-card ${featured ? 'match-card-featured' : ''}`}
+      onClick={() => onSelect(match)}
+    >
+      <div className="match-card-top">
+        <div className="competition">
+          <span className="competition-dot" />
+          {match.series || 'Cricket'}
+        </div>
+
+        <StatusBadge status={match.status} />
+      </div>
+
+      <div className="match-teams">
+        <div className="team-row">
+          <div className="team-name">
+            <TeamMark name={match.teamA} />
+            <span>{match.teamA}</span>
+          </div>
+
+          <span className="team-score">
+            {match.score
+              ? match.score.split(' - ')[0] || '—'
+              : '—'}
+          </span>
+        </div>
+
+        <div className="team-row">
+          <div className="team-name">
+            <TeamMark name={match.teamB} />
+            <span>{match.teamB}</span>
+          </div>
+
+          <span className="team-score">
+            {match.score
+              ? match.score.split(' - ')[1] || '—'
+              : '—'}
+          </span>
+        </div>
+      </div>
+
+      <div className="match-card-footer">
+        <span>
+          {match.status === 'LIVE'
+            ? 'Match in progress'
+            : formatDate(match.matchDate)}
+        </span>
+
+        <span>
+          Updated {formatTime(match.lastUpdated)}
+          <span className="arrow">→</span>
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function EmptyState({ filter, search }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-icon">○</div>
+
+      <h3>No matches found</h3>
+
+      <p>
+        {search
+          ? `No matches match "${search}".`
+          : `There are no ${filter.toLowerCase()} matches available.`}
+      </p>
+    </div>
+  );
+}
+
+function MatchDetails({ match, onClose }) {
+  if (!match) return null;
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={event => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="match-details"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="match-details-title"
+      >
+        <div className="details-header">
+          <div>
+            <div className="eyebrow">
+              {match.series || 'Cricket'}
+            </div>
+
+            <h2 id="match-details-title">
+              {match.teamA}
+              <span> vs </span>
+              {match.teamB}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            className="close-button"
+            onClick={onClose}
+            aria-label="Close match details"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="details-status">
+          <StatusBadge status={match.status} />
+
+          <span>
+            {match.status === 'LIVE'
+              ? 'Live match'
+              : formatDate(match.matchDate)}
+          </span>
+        </div>
+
+        <div className="details-score">
+          <div className="details-team">
+            <TeamMark name={match.teamA} />
+            <span>{match.teamA}</span>
+          </div>
+
+          <div className="details-main-score">
+            {match.score || 'No score available'}
+          </div>
+
+          <div className="details-team">
+            <TeamMark name={match.teamB} />
+            <span>{match.teamB}</span>
+          </div>
+        </div>
+
+        <div className="details-grid">
+          <div>
+            <span>Competition</span>
+            <strong>{match.series || '—'}</strong>
+          </div>
+
+          <div>
+            <span>Date</span>
+            <strong>{formatDate(match.matchDate)}</strong>
+          </div>
+
+          <div>
+            <span>Status</span>
+            <strong>{getStatusLabel(match.status)}</strong>
+          </div>
+
+          <div>
+            <span>Last updated</span>
+            <strong>{formatTime(match.lastUpdated)}</strong>
+          </div>
+        </div>
+
+        <div className="details-note">
+          <span className="details-note-indicator" />
+          Match information is supplied by the live sports data
+          provider and updates as new data becomes available.
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function App() {
+  const [matches, setMatches] = useState([]);
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [filter, setFilter] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [wsStatus, setWsStatus] = useState('CONNECTING');
+  const [lastRefresh, setLastRefresh] = useState(null);
+
+  const loadMatches = useCallback(async signal => {
+    try {
+      setError('');
+
+      const data = await fetchMatches(signal);
+
+      setMatches(Array.isArray(data) ? data : []);
+      setLastRefresh(new Date());
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        return;
+      }
+
+      console.error('Match API error:', err);
+
+      setError(
+        'Unable to load match data. The server may be temporarily unavailable.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    loadMatches(controller.signal);
+
+    return () => controller.abort();
+  }, [loadMatches]);
+
+  /*
+   * REST refresh is intentionally retained as a fallback.
+   * The backend currently persists provider updates, while the WebSocket
+   * channel can deliver immediate changes when the server publishes them.
+   */
+  useEffect(() => {
+    const refresh = () => {
+      loadMatches();
+    };
+
+    const interval = window.setInterval(refresh, 60_000);
+
+    return () => window.clearInterval(interval);
+  }, [loadMatches]);
+
+  useEffect(() => {
+    const stompClient = new Client({
+      webSocketFactory: () =>
+        new SockJS(`${WS_BASE_URL}/ws-sports`),
+
+      reconnectDelay: 5000,
+
+      onConnect: () => {
+        setWsStatus('CONNECTED');
+
+        stompClient.subscribe(WS_TOPIC, message => {
+          try {
+            const updatedMatch = JSON.parse(message.body);
+
+            setMatches(previous => {
+              const index = previous.findIndex(
+                match => match.id === updatedMatch.id
+              );
+
+              if (index === -1) {
+                return [updatedMatch, ...previous];
+              }
+
+              const next = [...previous];
+              next[index] = updatedMatch;
+
+              return next;
+            });
+
+            setLastRefresh(new Date());
+          } catch (err) {
+            console.error(
+              'Invalid WebSocket match payload:',
+              err
+            );
+          }
+        });
+      },
+
+      onDisconnect: () => {
+        setWsStatus('DISCONNECTED');
+      },
+
+      onStompError: frame => {
+        console.error('STOMP error:', frame);
+        setWsStatus('ERROR');
+      },
+
+      onWebSocketError: error => {
+        console.error('WebSocket error:', error);
+        setWsStatus('ERROR');
+      },
+
+      onWebSocketClose: () => {
+        setWsStatus('DISCONNECTED');
+      },
+    });
+
+    stompClient.activate();
+
+    return () => {
+      stompClient.deactivate();
+    };
+  }, []);
+
+  const counts = useMemo(
+    () => ({
+      ALL: matches.length,
+      LIVE: matches.filter(match => match.status === 'LIVE').length,
+      UPCOMING: matches.filter(
+        match => match.status === 'UPCOMING'
+      ).length,
+      COMPLETED: matches.filter(
+        match => match.status === 'COMPLETED'
+      ).length,
+    }),
+    [matches]
+  );
+
+  const visibleMatches = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    const filtered = matches.filter(match => {
+      const statusMatches =
+        filter === 'ALL' || match.status === filter;
+
+      if (!statusMatches) return false;
+
+      if (!normalizedSearch) return true;
+
+      return [
+        match.teamA,
+        match.teamB,
+        match.series,
+      ]
+        .filter(Boolean)
+        .some(value =>
+          value.toLowerCase().includes(normalizedSearch)
+        );
+    });
+
+    return sortMatches(filtered);
+  }, [matches, filter, search]);
+
+  const liveMatches = visibleMatches.filter(
+    match => match.status === 'LIVE'
+  );
+
+  const upcomingMatches = visibleMatches.filter(
+    match => match.status === 'UPCOMING'
+  );
+
+  const completedMatches = visibleMatches.filter(
+    match => match.status === 'COMPLETED'
+  );
+
+  const statusText = {
+    CONNECTED: 'LIVE CONNECTION',
+    CONNECTING: 'CONNECTING',
+    DISCONNECTED: 'RECONNECTING',
+    ERROR: 'CONNECTION ERROR',
+  }[wsStatus];
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="topbar-inner">
+          <div className="brand">
+            <div className="brand-mark">C</div>
+
+            <div>
+              <div className="brand-name">
+                Cricket Match Center
+              </div>
+
+              <div className="brand-subtitle">
+                Live scores · Fixtures · Results
+              </div>
+            </div>
+          </div>
+
+          <div className="system-status">
+            <span
+              className={`system-dot system-${wsStatus.toLowerCase()}`}
+            />
+
+            <span>{statusText}</span>
+
+            {lastRefresh && (
+              <span className="refresh-time">
+                · Updated {formatTime(lastRefresh)}
+              </span>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <main className="page">
+        <section className="page-heading">
+          <div>
+            <div className="section-kicker">
+              TODAY'S CRICKET
+            </div>
+
+            <h1>Live Match Center</h1>
+
+            <p>
+              Follow live matches, upcoming fixtures and recent
+              results in one place.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="refresh-button"
+            onClick={() => loadMatches()}
+          >
+            Refresh
+          </button>
+        </section>
+
+        {error && (
+          <div className="error-banner">
+            <strong>Data unavailable</strong>
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => loadMatches()}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        <section className="toolbar">
+          <div className="status-tabs">
+            {STATUS_FILTERS.map(status => (
+              <button
+                key={status}
+                type="button"
+                className={
+                  filter === status
+                    ? 'status-tab active'
+                    : 'status-tab'
+                }
+                onClick={() => setFilter(status)}
+              >
+                {status === 'LIVE' && (
+                  <span className="tab-live-dot" />
+                )}
+
+                {status === 'COMPLETED'
+                  ? 'RESULTS'
+                  : status}
+
+                <span className="tab-count">
+                  {counts[status]}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="search-wrapper">
+            <span className="search-icon">⌕</span>
+
+            <input
+              type="search"
+              value={search}
+              onChange={event =>
+                setSearch(event.target.value)
+              }
+              placeholder="Search teams or competitions"
+              aria-label="Search teams or competitions"
+            />
+          </div>
+        </section>
+
+        {loading ? (
+          <div className="loading-state">
+            <div className="loading-line" />
+            <div className="loading-line short" />
+            <div className="loading-line" />
+          </div>
+        ) : visibleMatches.length === 0 ? (
+          <EmptyState filter={filter} search={search} />
+        ) : (
+          <>
+            {liveMatches.length > 0 && (
+              <section className="match-section">
+                <div className="section-heading">
+                  <div>
+                    <span className="live-heading-dot" />
+                    <h2>Live now</h2>
+                  </div>
+
+                  <span>
+                    {liveMatches.length} match
+                    {liveMatches.length !== 1
+                      ? 'es'
+                      : ''}
+                  </span>
+                </div>
+
+                <div className="live-grid">
+                  {liveMatches.map((match, index) => (
+                    <MatchCard
+                      key={match.id}
+                      match={match}
+                      featured={index === 0}
+                      onSelect={setSelectedMatch}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {upcomingMatches.length > 0 && (
+              <section className="match-section">
+                <div className="section-heading">
+                  <div>
+                    <h2>Upcoming</h2>
+                  </div>
+
+                  <span>
+                    {upcomingMatches.length} scheduled
+                  </span>
+                </div>
+
+                <div className="match-list">
+                  {upcomingMatches.map(match => (
+                    <MatchCard
+                      key={match.id}
+                      match={match}
+                      onSelect={setSelectedMatch}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {completedMatches.length > 0 && (
+              <section className="match-section">
+                <div className="section-heading">
+                  <div>
+                    <h2>Results</h2>
+                  </div>
+
+                  <span>
+                    {completedMatches.length} completed
+                  </span>
+                </div>
+
+                <div className="match-list">
+                  {completedMatches.map(match => (
+                    <MatchCard
+                      key={match.id}
+                      match={match}
+                      onSelect={setSelectedMatch}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
+        )}
+
+        <footer className="footer">
+          <span>Cricket Match Center</span>
+
+          <span className="footer-separator">·</span>
+
+          <a
+            href="https://sportscore.com/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Powered by SportScore
+          </a>
+        </footer>
+      </main>
+
+      <MatchDetails
+        match={selectedMatch}
+        onClose={() => setSelectedMatch(null)}
+      />
+    </div>
+  );
+}
+
+export default App;
