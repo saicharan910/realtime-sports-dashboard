@@ -309,8 +309,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [wsStatus, setWsStatus] = useState('CONNECTING');
-  const [lastRefresh, setLastRefresh] = useState(null);
-  const [isStale, setIsStale] = useState(false);
+  const [staleCheckAt, setStaleCheckAt] = useState(() => Date.now());
 
   const selectedMatch = useMemo(
     () => matches.find(match => match.id === selectedMatchId) ?? null,
@@ -324,8 +323,6 @@ function App() {
       const data = await fetchMatches(signal);
 
       setMatches(Array.isArray(data) ? data : []);
-      setLastRefresh(new Date());
-      setIsStale(false);
     } catch (err) {
       if (err?.name === 'AbortError') {
         return;
@@ -401,8 +398,6 @@ function App() {
               return next;
             });
 
-            setLastRefresh(new Date());
-            setIsStale(false);
           } catch (err) {
             console.error(
               'Invalid WebSocket match payload:',
@@ -438,17 +433,48 @@ function App() {
     };
   }, [loadMatches]);
 
-  useEffect(() => {
-    if (!lastRefresh) return undefined;
 
-    const age = Date.now() - lastRefresh.getTime();
-    const delay = Math.max(0, 90000 - age);
+  const latestDataUpdate = useMemo(() => {
+    const timestamps = matches
+      .map(match => match.lastUpdated)
+      .filter(Boolean)
+      .map(value => new Date(value).getTime())
+      .filter(value => !Number.isNaN(value));
+
+    if (timestamps.length === 0) return null;
+    return new Date(Math.max(...timestamps));
+  }, [matches]);
+
+  const latestLiveUpdate = useMemo(() => {
+    const timestamps = matches
+      .filter(match => match.status === 'LIVE')
+      .map(match => match.lastUpdated)
+      .filter(Boolean)
+      .map(value => new Date(value).getTime())
+      .filter(value => !Number.isNaN(value));
+
+    if (timestamps.length === 0) return null;
+    return new Date(Math.max(...timestamps));
+  }, [matches]);
+
+  const isStale = latestLiveUpdate
+    ? staleCheckAt - latestLiveUpdate.getTime() >= 90000
+    : false;
+
+  useEffect(() => {
+    if (!latestLiveUpdate) return undefined;
+
+    const delay = Math.max(0,
+      latestLiveUpdate.getTime() + 90000 - Date.now()
+    );
+
     const timer = window.setTimeout(() => {
-      setIsStale(true);
+      setStaleCheckAt(Date.now());
     }, delay);
 
     return () => window.clearTimeout(timer);
-  }, [lastRefresh]);
+  }, [latestLiveUpdate]);
+
 
   const counts = useMemo(
     () => ({
@@ -534,8 +560,8 @@ function App() {
 
             <span>{isStale && wsStatus === 'CONNECTED' ? 'Live updates delayed' : statusText}</span>
 
-            {lastRefresh && (
-              <span className="refresh-time">Updated {formatTime(lastRefresh)}
+            {latestDataUpdate && (
+              <span className="refresh-time">Updated {formatTime(latestDataUpdate)}
               </span>
             )}
           </div>
