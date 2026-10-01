@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
@@ -26,9 +27,11 @@ public class SportScoreClient implements CricketDataProvider {
     private static final long RETRY_BASE_DELAY_MS = 500L;
     private static final long RETRY_MAX_DELAY_MS = 5000L;
     private static final long RETRY_JITTER_MS = 250L;
+    private static final long LIVE_DETAIL_COOLDOWN_MS = 90_000L;
 
     private final RestClient restClient;
     private final String apiKey;
+    private final ConcurrentHashMap<String, Long> liveDetailLastFetchedAt = new ConcurrentHashMap<>();
 
     public SportScoreClient(
         RestClient.Builder builder,
@@ -109,6 +112,16 @@ public class SportScoreClient implements CricketDataProvider {
         if (slug.isBlank()) {
             return null;
         }
+
+        long now = System.currentTimeMillis();
+        Long lastFetchedAt = liveDetailLastFetchedAt.get(slug);
+
+        if (lastFetchedAt != null
+                && now - lastFetchedAt < LIVE_DETAIL_COOLDOWN_MS) {
+            return null;
+        }
+
+        liveDetailLastFetchedAt.put(slug, now);
 
         try {
             JsonNode detail = executeWithRetry(() ->
