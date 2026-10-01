@@ -137,7 +137,7 @@ function MatchCard({ match, onSelect, featured = false }) {
           <span className="team-score">
             {match.score
               ? match.score.split(' - ')[0] || 'No score'
-              : 'No score'}
+              : (match.status === 'UPCOMING' ? 'Not started' : 'Score unavailable')}
           </span>
         </div>
 
@@ -150,7 +150,7 @@ function MatchCard({ match, onSelect, featured = false }) {
           <span className="team-score">
             {match.score
               ? match.score.split(' - ')[1] || 'No score'
-              : 'No score'}
+              : (match.status === 'UPCOMING' ? 'Not started' : 'Score unavailable')}
           </span>
         </div>
       </div>
@@ -260,7 +260,7 @@ function MatchDetails({ match, onClose }) {
           </div>
 
           <div className="details-main-score">
-            {match.score || 'No score available'}
+            {match.score || (match.status === 'UPCOMING' ? 'Not started' : 'Score unavailable')}
           </div>
 
           <div className="details-team">
@@ -402,7 +402,6 @@ function App() {
 
             setLastRefresh(new Date());
             setIsStale(false);
-      setIsStale(false);
           } catch (err) {
             console.error(
               'Invalid WebSocket match payload:',
