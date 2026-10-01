@@ -313,13 +313,18 @@ function MatchDetails({ match, onClose }) {
 
 function App() {
   const [matches, setMatches] = useState([]);
-  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [selectedMatchId, setSelectedMatchId] = useState(null);
   const [filter, setFilter] = useState('ALL');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [wsStatus, setWsStatus] = useState('CONNECTING');
   const [lastRefresh, setLastRefresh] = useState(null);
+
+  const selectedMatch = useMemo(
+    () => matches.find(match => match.id === selectedMatchId) ?? null,
+    [matches, selectedMatchId]
+  );
 
   const loadMatches = useCallback(async signal => {
     try {
@@ -640,7 +645,7 @@ function App() {
                       key={match.id}
                       match={match}
                       featured={index === 0}
-                      onSelect={setSelectedMatch}
+                      onSelect={match => setSelectedMatchId(match.id)}
                     />
                   ))}
                 </div>
@@ -664,7 +669,7 @@ function App() {
                     <MatchCard
                       key={match.id}
                       match={match}
-                      onSelect={setSelectedMatch}
+                      onSelect={match => setSelectedMatchId(match.id)}
                     />
                   ))}
                 </div>
@@ -688,7 +693,7 @@ function App() {
                     <MatchCard
                       key={match.id}
                       match={match}
-                      onSelect={setSelectedMatch}
+                      onSelect={match => setSelectedMatchId(match.id)}
                     />
                   ))}
                 </div>
@@ -714,7 +719,7 @@ function App() {
 
       <MatchDetails
         match={selectedMatch}
-        onClose={() => setSelectedMatch(null)}
+        onClose={() => setSelectedMatchId(null)}
       />
     </div>
   );
