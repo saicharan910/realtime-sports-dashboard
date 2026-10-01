@@ -842,3 +842,14 @@
         border-bottom: 0;
     }
 }
+
+.refresh-button:focus-visible,
+.error-banner button:focus-visible,
+.status-tab:focus-visible,
+.match-card:focus-visible,
+.close-button:focus-visible,
+.footer a:focus-visible,
+.search-wrapper input:focus-visible {
+    outline: 2px solid #526b5b;
+    outline-offset: 2px;
+}
