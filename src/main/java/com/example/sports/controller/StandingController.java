@@ -9,7 +9,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/standings")
-@CrossOrigin(origins = "*")
 public class StandingController {
 
     private final StandingRepository standingRepository;
