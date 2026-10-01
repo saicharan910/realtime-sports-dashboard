@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import { fetchMatches } from './api/matchesApi';
@@ -108,16 +108,6 @@ function TeamMark({ name }) {
     <span className="team-mark" aria-hidden="true">
       {getTeamInitials(name)}
     </span>
-  );
-}
-
-function MatchScore({ match }) {
-  const hasScore = Boolean(match.score);
-
-  return (
-    <div className="match-score">
-      {hasScore ? match.score : 'No score'}
-    </div>
   );
 }
 
@@ -320,6 +310,7 @@ function App() {
   const [error, setError] = useState('');
   const [wsStatus, setWsStatus] = useState('CONNECTING');
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [isStale, setIsStale] = useState(false);
 
   const selectedMatch = useMemo(
     () => matches.find(match => match.id === selectedMatchId) ?? null,
@@ -334,6 +325,7 @@ function App() {
 
       setMatches(Array.isArray(data) ? data : []);
       setLastRefresh(new Date());
+      setIsStale(false);
     } catch (err) {
       if (err?.name === 'AbortError') {
         return;
@@ -351,10 +343,14 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      loadMatches(controller.signal);
+    }, 0);
 
-    loadMatches(controller.signal);
-
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [loadMatches]);
 
   /*
@@ -405,6 +401,8 @@ function App() {
             });
 
             setLastRefresh(new Date());
+            setIsStale(false);
+      setIsStale(false);
           } catch (err) {
             console.error(
               'Invalid WebSocket match payload:',
@@ -439,6 +437,18 @@ function App() {
       stompClient.deactivate();
     };
   }, [loadMatches]);
+
+  useEffect(() => {
+    if (!lastRefresh) return undefined;
+
+    const age = Date.now() - lastRefresh.getTime();
+    const delay = Math.max(0, 90000 - age);
+    const timer = window.setTimeout(() => {
+      setIsStale(true);
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [lastRefresh]);
 
   const counts = useMemo(
     () => ({
@@ -498,7 +508,6 @@ function App() {
     ERROR: 'Live updates unavailable',
   }[wsStatus];
 
-  const isStale = lastRefresh && Date.now() - lastRefresh.getTime() > 90000;
 
   return (
     <div className="app-shell">
