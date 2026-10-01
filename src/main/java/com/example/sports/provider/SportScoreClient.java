@@ -3,7 +3,7 @@ package com.example.sports.provider;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import com.example.sports.dto.MatchResponseDTO;
 import com.example.sports.model.MatchStatus;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -189,7 +189,7 @@ public class SportScoreClient implements CricketDataProvider {
         }
 
         if (node.isObject()) {
-            var fields = node.fields();
+            var fields = node.properties().iterator();
 
             while (fields.hasNext()) {
                 JsonNode child = fields.next().getValue();
@@ -221,7 +221,7 @@ public class SportScoreClient implements CricketDataProvider {
         }
 
         if (node.isObject()) {
-            var fields = node.fields();
+            var fields = node.properties().iterator();
 
             while (fields.hasNext()) {
                 JsonNode child = fields.next().getValue();
