@@ -101,7 +101,7 @@ public class SportScoreClient implements CricketDataProvider {
 
     private String fetchLiveScore(SportScoreMatch match) {
 
-        String slug = safe(match.slug());
+        String slug = extractSlug(match);
 
         if (slug.isBlank()) {
             return null;
@@ -125,6 +125,30 @@ public class SportScoreClient implements CricketDataProvider {
         } catch (RestClientException exception) {
             return null;
         }
+    }
+
+    private String extractSlug(SportScoreMatch match) {
+        if (match.slug() != null && !match.slug().isBlank()) {
+            return match.slug().trim();
+        }
+
+        String url = safe(match.url()).trim();
+
+        if (url.isBlank()) {
+            return "";
+        }
+
+        String normalized = url.endsWith("/")
+                ? url.substring(0, url.length() - 1)
+                : url;
+
+        int separator = normalized.lastIndexOf("/");
+
+        if (separator < 0 || separator == normalized.length() - 1) {
+            return "";
+        }
+
+        return normalized.substring(separator + 1);
     }
 
     private String extractScore(JsonNode node) {
