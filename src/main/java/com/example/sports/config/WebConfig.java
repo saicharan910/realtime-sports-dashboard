@@ -23,10 +23,6 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedOrigins(frontendOrigin)
                 .allowedMethods(
                         "GET",
-                        "POST",
-                        "PUT",
-                        "PATCH",
-                        "DELETE",
                         "OPTIONS"
                 )
                 .allowedHeaders("*");

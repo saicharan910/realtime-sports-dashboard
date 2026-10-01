@@ -9,6 +9,6 @@ public class HomeController {
 
     @GetMapping("/")
     public ResponseEntity<String> home() {
-        return ResponseEntity.ok("CricAnalytics Backend API is running successfully. Access endpoints at /api/matches or H2 console at /h2-console.");
+        return ResponseEntity.ok("CricAnalytics Backend API is running successfully. Access endpoints at /api/matches.");
     }
 }
