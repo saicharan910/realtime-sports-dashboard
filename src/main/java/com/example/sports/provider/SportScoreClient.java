@@ -16,13 +16,16 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 @Component
 public class SportScoreClient implements CricketDataProvider {
 
     private static final int MAX_ATTEMPTS = 3;
-    private static final long RETRY_DELAY_MS = 500L;
+    private static final long RETRY_BASE_DELAY_MS = 500L;
+    private static final long RETRY_MAX_DELAY_MS = 5000L;
+    private static final long RETRY_JITTER_MS = 250L;
 
     private final RestClient restClient;
     private final String apiKey;
@@ -295,7 +298,9 @@ public class SportScoreClient implements CricketDataProvider {
             }
 
             try {
-                Thread.sleep(RETRY_DELAY_MS * attempt);
+                long exponentialDelay = Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * (1L << (attempt - 1)));
+                long jitter = ThreadLocalRandom.current().nextLong(RETRY_JITTER_MS + 1);
+                Thread.sleep(exponentialDelay + jitter);
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException(
