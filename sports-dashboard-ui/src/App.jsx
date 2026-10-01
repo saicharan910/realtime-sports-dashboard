@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import SockJS from 'sockjs-client';
-import { Client } from '@stomp/stompjs';
+import { Client, ReconnectionTimeMode } from '@stomp/stompjs';
 import { fetchMatches } from './api/matchesApi';
 import './App.css';
 
@@ -373,8 +373,9 @@ function App() {
       webSocketFactory: () =>
         new SockJS(`${WS_BASE_URL}/ws-sports`),
 
+      reconnectTimeMode: ReconnectionTimeMode.EXPONENTIAL,
       reconnectDelay: 2000,
-      reconnectDelayMax: 30000,
+      maxReconnectDelay: 30000,
       connectionTimeout: 10000,
 
       onConnect: () => {
